@@ -8,6 +8,31 @@ import subprocess
 import platform
 import random
 import time
+import importlib
+
+def ensure_imports(modules):
+    """
+    Ensure all modules in the list can be imported.
+    If missing, attempt to install via pip.
+    """
+    for mod in modules:
+        try:
+            importlib.import_module(mod)
+        except ImportError:
+            print(f"[!] Missing module '{mod}', attempting to install...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", mod])
+            print(f"[+] Installed '{mod}' successfully.")
+            importlib.import_module(mod)  # import it again
+        except Exception as e:
+            print(f"[!] Error checking module '{mod}': {e}")
+
+
+ensure_imports([
+    "colorama",
+    "fortune",
+    "random"
+])
+
 
 # ---------- Color support ----------
 try:
@@ -441,17 +466,23 @@ def uptime_info():
 
 def fortune():
     """Display a random fortune/quote"""
+    try:
+        # Try to use the fortune library if available
+        import fortune as fortune_lib
+        
+        try:
+            fortune_text = fortune_lib.get_random_fortune()
+            print(Fore.MAGENTA + "\n💭 Fortune Cookie:\n")
+            print(Fore.WHITE + fortune_text + "\n")
+            return
+        except:
+            pass
+    except ImportError:
+        pass
+    
+    # Fallback to built-in fortunes if library not available
     fortunes = [
-        "The best way to predict the future is to implement it.",
-        "Code is like humor. When you have to explain it, it's bad.",
-        "There are two ways to write error-free programs; only the third works.",
-        "In theory, theory and practice are the same. In practice, they're not.",
-        "Programming is 10% writing code and 90% understanding why it doesn't work.",
-        "A good programmer is someone who always looks both ways before crossing a one-way street.",
-        "Don't comment bad code—rewrite it.",
-        "The most dangerous phrase in the language is 'We've always done it this way.'",
-        "First, solve the problem. Then, write the code.",
-        "Keep calm and clear the cache."
+        "there are no fortunes. something effed up."
     ]
     print(Fore.MAGENTA + "\n💭 " + random.choice(fortunes) + "\n")
 

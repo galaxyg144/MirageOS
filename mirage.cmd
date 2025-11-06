@@ -6,7 +6,7 @@ setlocal EnableDelayedExpansion
 
 set VERSION=1.0.0
 set MIRAGE_DIR=%USERPROFILE%\.mirage
-set GITHUB_REPO=https://raw.githubusercontent.com/galaxyg144/MirageOS/main
+set GITHUB_RELEASE=https://github.com/galaxyg144/MirageOS/releases/latest/download
 
 :: Check if script is in PATH, if not offer to add it
 if not exist "%MIRAGE_DIR%" (
@@ -219,50 +219,42 @@ goto :MainMenu
 :Download
 echo.
 echo ========================================
-echo   Downloading Mirage Files
+echo   Downloading Latest Mirage Release
 echo ========================================
 echo.
 
 if not exist "%MIRAGE_DIR%" mkdir "%MIRAGE_DIR%"
 
-echo Downloading from GitHub...
-echo Repository: %GITHUB_REPO%
-echo.
+:: Files to download
+set FILES=mirage.py mirage_editor.py
 
 :: Check if curl is available
 where curl >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: curl not found. Installing files manually...
-    echo.
-    echo Please visit: https://github.com/YOUR_USERNAME/mirage-os
-    echo And download mirage.py and mirage_editor.py to:
-    echo %MIRAGE_DIR%
-    echo.
+    echo ERROR: curl not found.
+    echo Please install curl, or download files manually from GitHub releases:
+    echo https://github.com/galaxyg144/MirageOS/releases/latest
     pause
     exit /b 1
 )
 
-:: Download mirage.py
-echo [1/2] Downloading mirage.py...
-curl -L -o "%MIRAGE_DIR%\mirage.py" "%GITHUB_REPO%/mirage.py" 2>nul
-if %ERRORLEVEL% EQU 0 (
-    echo       SUCCESS - mirage.py downloaded
-) else (
-    echo       FAILED - Could not download mirage.py
-    echo.
-    echo       Make sure the GitHub repository exists at:
-    echo       %GITHUB_REPO%
-    goto :DownloadError
-)
+:: Download each file from the latest release
+for %%F in (%FILES%) do (
+    echo Downloading %%F...
+    curl -L -H "User-Agent: MirageCLI" -o "%MIRAGE_DIR%\%%F" "%GITHUB_RELEASE%/%%F"
 
-:: Download mirage_editor.py
-echo [2/2] Downloading mirage_editor.py...
-curl -L -o "%MIRAGE_DIR%\mirage_editor.py" "%GITHUB_REPO%/mirage_editor.py" 2>nul
-if %ERRORLEVEL% EQU 0 (
-    echo       SUCCESS - mirage_editor.py downloaded
-) else (
-    echo       WARNING - Could not download mirage_editor.py
-    echo       Mirage will work but editor features may be limited
+    :: Check if file exists and is not empty
+    if exist "%MIRAGE_DIR%\%%F" (
+        for %%S in ("%MIRAGE_DIR%\%%F") do if %%~zS NEQ 0 (
+            echo       SUCCESS - %%F downloaded
+        ) else (
+            echo       FAILED - %%F is empty
+            echo       Please check the latest release on GitHub
+        )
+    ) else (
+        echo       FAILED - %%F not downloaded
+        echo       Please check the latest release on GitHub
+    )
 )
 
 echo.
@@ -279,27 +271,6 @@ exit /b 0
 :DownloadMenu
 cls
 call :Download
-pause
-goto :MainMenu
-
-:DownloadError
-echo.
-echo ========================================
-echo   Download Failed
-echo ========================================
-echo.
-echo Could not download files from GitHub.
-echo.
-echo Please check:
-echo   1. Your internet connection
-echo   2. The repository URL is correct
-echo   3. The files exist in the repository
-echo.
-echo Current repository: %GITHUB_REPO%
-echo.
-echo You can manually place mirage.py and mirage_editor.py in:
-echo %MIRAGE_DIR%
-echo.
 pause
 goto :MainMenu
 
