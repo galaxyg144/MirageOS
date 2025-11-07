@@ -312,7 +312,7 @@ def main(stdscr, filename="untitled.txt"):
             show_line_nums = not show_line_nums
             show_message(f"Line numbers: {'ON' if show_line_nums else 'OFF'}", 15)
             
-        elif key == "\x08" or key == curses.KEY_F1:  # Ctrl+H
+        elif key == curses.KEY_F1:  # Ctrl+H
             show_help()
 
             
