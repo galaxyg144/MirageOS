@@ -464,16 +464,46 @@ def uptime_info():
     except Exception as e:
         print(Fore.RED + f"Error: {e}")
 
-def fortune():
+def show_fortune():
+    # Try to use the fortune library if available
+    try:
+        import fortune as fortune_lib
+        try:
+            fortune_text = fortune_lib.get_random_fortune()
+            print(Fore.MAGENTA + "\n💭 Fortune Cookie:\n")
+            print(Fore.WHITE + fortune_text + "\n")
+            return
+        except Exception:
+            # If the library fails, fallback
+            pass
+    except ImportError:
+        # Library not installed, fallback
+        pass
+
+    # Fallback built-in fortunes
+    fortunes = [
+        "You will find a hidden gem today.",
+        "Be wary of unexpected surprises.",
+        "A fresh start will put you on your path.",
+        "Something new is about to happen.",
+        "Patience is your ally today.",
+        "Fortune favors the bold.",
+        "An old friend will contact you soon.",
+        "Today is a perfect day to learn something new.",
+        "Happiness comes from unexpected places.",
+        "please send me a fortunes.txt file i had to think of crap to write PLEASE send me a fortune.txt reach me on discord at @.itzyaboigalaxy."
+    ]
+
+    # Pick one random fortune
+    import random
+    print(Fore.MAGENTA + "\n💭 Fortune Cookie:\n")
+    print(Fore.WHITE + random.choice(fortunes) + "\n")
     """Display a random fortune/quote"""
     try:
         # Try to use the fortune library if available
         import fortune as fortune_lib
         
         try:
-            fortune_text = fortune_lib.get_random_fortune()
-            print(Fore.MAGENTA + "\n💭 Fortune Cookie:\n")
-            print(Fore.WHITE + fortune_text + "\n")
             return
         except:
             pass
@@ -1200,7 +1230,7 @@ def mirage():
         elif command == "whoami":
             whoami(current_user)
         elif command == "fortune":
-            fortune()
+            show_fortune()
         elif command == "alias":
             manage_aliases(parts[1:])
             # Reload aliases after modification

@@ -314,6 +314,7 @@ def main(stdscr, filename="untitled.txt"):
             
         elif key == "\x08" or key == curses.KEY_F1:  # Ctrl+H
             show_help()
+
             
         elif key == curses.KEY_UP:
             if cursor_y > 0:
