@@ -225,8 +225,8 @@ echo.
 
 if not exist "%MIRAGE_DIR%" mkdir "%MIRAGE_DIR%"
 
-:: Files to download
-set FILES=mirage.py mirage_editor.py mir.bat
+:: Files to download (NOT including mir.bat to avoid self-overwrite)
+set FILES=mirage.py mirage_editor.py
 
 :: Check if curl is available
 where curl >nul 2>&1
@@ -238,55 +238,38 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-:: Delete existing files first to ensure clean overwrite
-echo Preparing to overwrite existing files...
-for %%F in (%FILES%) do (
-    if exist "%MIRAGE_DIR%\%%F" (
-        echo Removing old %%F...
-        del /F /Q "%MIRAGE_DIR%\%%F" 2>nul
-    )
-)
-
-echo.
-echo Downloading fresh files from GitHub...
-echo.
-
 :: Download each file from the latest release
-set DOWNLOAD_SUCCESS=0
-set DOWNLOAD_FAILED=0
-
 for %%F in (%FILES%) do (
     echo Downloading %%F...
-    
-    :: Force overwrite with curl flags
-    curl -L -f -H "User-Agent: MirageCLI" -o "%MIRAGE_DIR%\%%F" "%GITHUB_RELEASE%/%%F" 2>nul
+    curl -L -H "User-Agent: MirageCLI" -o "%MIRAGE_DIR%\%%F" "%GITHUB_RELEASE%/%%F"
 
     :: Check if file exists and is not empty
     if exist "%MIRAGE_DIR%\%%F" (
-        for %%S in ("%MIRAGE_DIR%\%%F") do (
-            if %%~zS GTR 0 (
-                echo       [OK] %%F downloaded successfully
-                set /a DOWNLOAD_SUCCESS+=1
-            ) else (
-                echo       [FAIL] %%F is empty
-                set /a DOWNLOAD_FAILED+=1
-            )
+        for %%S in ("%MIRAGE_DIR%\%%F") do if %%~zS NEQ 0 (
+            echo       SUCCESS - %%F downloaded
+        ) else (
+            echo       FAILED - %%F is empty
+            echo       Please check the latest release on GitHub
         )
     ) else (
-        echo       [FAIL] %%F download failed
-        set /a DOWNLOAD_FAILED+=1
+        echo       FAILED - %%F not downloaded
+        echo       Please check the latest release on GitHub
     )
 )
 
 echo.
 echo ========================================
-echo   Download Summary
+echo   Download Complete!
 echo ========================================
 echo.
-echo Successful: %DOWNLOAD_SUCCESS%
-echo Failed:     %DOWNLOAD_FAILED%
+echo Files installed to: %MIRAGE_DIR%
 echo.
-
+echo NOTE: mir.bat was not updated to avoid conflicts.
+echo       To update mir.bat, download it manually from GitHub.
+echo.
+echo You can now run: mir run
+echo.
+exit /b 0
 if %DOWNLOAD_FAILED% GTR 0 (
     echo WARNING: Some files failed to download.
     echo Please check your internet connection or visit:
