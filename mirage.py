@@ -10,6 +10,9 @@ import random
 import time
 import importlib
 
+# Mirage Store API endpoint
+STORE_API = "https://miragestore.onrender.com"
+
 def ensure_imports(modules):
     """
     Ensure all modules in the list can be imported.
@@ -30,7 +33,8 @@ def ensure_imports(modules):
 ensure_imports([
     "colorama",
     "fortune",
-    "random"
+    "random",
+    "requests"
 ])
 
 
@@ -139,6 +143,16 @@ def login():
 def switch_user():
     print(Fore.CYAN + "\nSwitching user...")
     return login()
+
+def cleanup_guest():
+    """Clean up guest user directory"""
+    guest_dir = os.path.join(USERS_DIR, GUEST_USER)
+    if os.path.exists(guest_dir):
+        try:
+            shutil.rmtree(guest_dir)
+            print(Fore.CYAN + "✓ Guest session cleaned up")
+        except Exception as e:
+            print(Fore.YELLOW + f"Warning: Could not clean up guest directory: {e}")
 
 def delete_user(current_user):
     """Delete a user account"""
@@ -854,7 +868,6 @@ def run_mapp(filename):
     print(Fore.CYAN + f"Loading Mirage Application: {filename}")
     
     metadata, code = parse_mapp_file(filename)
-    
     if metadata is None or code is None:
         return
     
@@ -867,8 +880,7 @@ def run_mapp(filename):
     if 'description' in metadata:
         print(Fore.YELLOW + f"📝 Description: " + Fore.WHITE + metadata['description'])
     print(Fore.CYAN + "═" * 50)
-    
-    # Ask for confirmation
+
     run_confirm = input(Fore.YELLOW + "Run this application? (yes/no): ").strip().lower()
     if run_confirm != 'yes':
         print(Fore.YELLOW + "Execution cancelled.")
@@ -876,30 +888,36 @@ def run_mapp(filename):
     
     print(Fore.GREEN + "\n▶ Running application...\n")
     
-    # Execute the Python code
+    import tempfile, subprocess, os
+    
     try:
-        # Create a safe execution environment with Mirage utilities
-        exec_globals = {
-            '__builtins__': __builtins__,
-            '__name__': '__mapp__',
-            '__file__': filename,
-            'metadata': metadata,
-            'Fore': Fore,
-            'Style': Style,
-            'os': os,
-            'sys': sys,
-            'datetime': datetime,
-            'json': json
-        }
+        # Write the Python section to a temp file
+        app_name = metadata.get("name", "MirageApp").replace(" ", "_")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".py", prefix=f"{app_name}_") as temp_file:
+            temp_file.write(code.encode('utf-8'))
+            temp_path = temp_file.name
         
-        exec(code, exec_globals)
+        # Decide how to run (interactive or silent)
+        interactive = metadata.get("interactive", True)
+        
+        if interactive:
+            subprocess.run(["python", temp_path])  # full console access
+        else:
+            result = subprocess.run(["python", temp_path], capture_output=True, text=True)
+            print(result.stdout)
+            if result.stderr:
+                print(Fore.RED + result.stderr)
         
         print(Fore.GREEN + "\n✓ Application completed successfully")
     
     except Exception as e:
         print(Fore.RED + f"\n✗ Application error: {e}")
-        import traceback
-        traceback.print_exc()
+    finally:
+        # Clean up temp file
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
 
 def create_mapp_template(filename):
     """Create a template .mapp file"""
@@ -1014,6 +1032,175 @@ def run_file(filename):
         # Code files and unknown types - just inform the user
         print(Fore.YELLOW + f"Cannot run '{ext}' files. Use 'edit {filename}' to view/edit.")
 
+# ---------- Mirage Store Functions ----------
+def mirage_store_list():
+    """List all apps in the Mirage Store"""
+    try:
+        import requests
+        print(Fore.CYAN + "📦 Fetching apps from Mirage Store...")
+        response = requests.get(f"{STORE_API}/apps", timeout=10)
+        
+        if response.status_code == 200:
+            apps = response.json()
+            
+            if not apps:
+                print(Fore.YELLOW + "No apps in the store yet.")
+                return
+            
+            print(Fore.CYAN + "═" * 60)
+            print(Fore.CYAN + "Available Apps in Mirage Store:")
+            print(Fore.CYAN + "═" * 60)
+            
+            for app_file in sorted(apps):
+                # Parse the filename to extract info
+                # Format could be: filename.mapp or filename-code.mapp
+                base_name = app_file.replace('.mapp', '')
+                
+                print(Fore.BLUE + f"📦 {app_file}")
+                
+                # Try to download and parse metadata without saving
+                try:
+                    meta_response = requests.get(f"{STORE_API}/apps/{app_file}", timeout=10)
+                    if meta_response.status_code == 200:
+                        # Parse the .mapp file to extract metadata
+                        content = meta_response.text
+                        json_start = content.find('[JSON]')
+                        json_end = content.find('[JSONEND]')
+                        
+                        if json_start != -1 and json_end != -1:
+                            json_str = content[json_start + 6:json_end].strip()
+                            metadata = json.loads(json_str)
+                            
+                            name = metadata.get('name', 'Unknown')
+                            version = metadata.get('version', '?')
+                            author = metadata.get('author', 'Unknown')
+                            
+                            print(Fore.YELLOW + f"   {name} " + Fore.WHITE + f"v{version}")
+                            print(Fore.WHITE + f"   👤 Author: {author}")
+                            
+                            if 'description' in metadata:
+                                print(Fore.WHITE + f"   {metadata['description']}")
+                except:
+                    # If we can't parse metadata, just show filename
+                    pass
+                
+                print()
+        else:
+            print(Fore.RED + f"Error fetching store apps: HTTP {response.status_code}")
+    
+    except ImportError:
+        print(Fore.RED + "Error: 'requests' module not installed")
+        print(Fore.YELLOW + "Install with: pip install requests")
+    except Exception as e:
+        print(Fore.RED + f"Error connecting to Mirage Store: {e}")
+
+def mirage_store_download(filename):
+    """Download an app from the Mirage Store"""
+    try:
+        import requests
+        
+        # Add .mapp extension if not present
+        if not filename.endswith('.mapp'):
+            filename += '.mapp'
+        
+        print(Fore.CYAN + f"📥 Downloading '{filename}' from Mirage Store...")
+        
+        response = requests.get(f"{STORE_API}/apps/{filename}", timeout=30)
+        
+        if response.status_code == 200:
+            # Check if file already exists locally
+            local_path = os.path.join(os.getcwd(), filename)
+            
+            if os.path.exists(local_path):
+                overwrite = input(Fore.YELLOW + f"'{filename}' already exists. Overwrite? (yes/no): ").strip().lower()
+                if overwrite != 'yes':
+                    print(Fore.YELLOW + "Download cancelled.")
+                    return
+            
+            # Save the file
+            with open(local_path, 'wb') as f:
+                f.write(response.content)
+            
+            print(Fore.GREEN + f"✓ Downloaded '{filename}' successfully!")
+            print(Fore.CYAN + f"  Run with: run {filename}")
+        
+        elif response.status_code == 404:
+            print(Fore.RED + f"App '{filename}' not found in store.")
+            print(Fore.YELLOW + "Use 'ms list' to see available apps.")
+        else:
+            print(Fore.RED + f"Error downloading: HTTP {response.status_code}")
+    
+    except ImportError:
+        print(Fore.RED + "Error: 'requests' module not installed")
+        print(Fore.YELLOW + "Install with: pip install requests")
+    except Exception as e:
+        print(Fore.RED + f"Error downloading from store: {e}")
+
+def mirage_store_upload(filename, current_user):
+    """Upload an app to the Mirage Store"""
+    try:
+        import requests
+        
+        # Add .mapp extension if not present
+        if not filename.endswith('.mapp'):
+            filename += '.mapp'
+        
+        # Check if file exists
+        if not os.path.exists(filename):
+            print(Fore.RED + f"File '{filename}' not found.")
+            return
+        
+        # Parse the .mapp file to get metadata
+        metadata, code = parse_mapp_file(filename)
+        if metadata is None:
+            print(Fore.RED + "Invalid .mapp file format. Cannot upload.")
+            return
+        
+        # Update author to current user if not set or empty
+        if 'author' not in metadata or not metadata['author'] or metadata['author'] == 'Your Name':
+            metadata['author'] = current_user
+            print(Fore.YELLOW + f"Setting author to: {current_user}")
+        
+        print(Fore.CYAN + f"📤 Uploading '{filename}' to Mirage Store...")
+        print(Fore.YELLOW + f"   App: {metadata.get('name', 'Unknown')}")
+        print(Fore.YELLOW + f"   Version: {metadata.get('version', '?')}")
+        print(Fore.YELLOW + f"   Author: {metadata.get('author', 'Unknown')}")
+        
+        confirm = input(Fore.YELLOW + "\nProceed with upload? (yes/no): ").strip().lower()
+        if confirm != 'yes':
+            print(Fore.YELLOW + "Upload cancelled.")
+            return
+        
+        # Read file content
+        with open(filename, 'rb') as f:
+            files = {'file': (filename, f, 'application/octet-stream')}
+            
+            response = requests.post(f"{STORE_API}/upload", files=files, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            uploaded_name = result.get('filename', filename)
+            
+            print(Fore.GREEN + f"✓ Uploaded successfully!")
+            
+            if uploaded_name != filename:
+                print(Fore.YELLOW + f"  Note: File was renamed to '{uploaded_name}' (name conflict)")
+            
+            print(Fore.CYAN + f"  Others can download with: ms download {uploaded_name}")
+        else:
+            print(Fore.RED + f"Error uploading: HTTP {response.status_code}")
+            try:
+                error_data = response.json()
+                if 'error' in error_data:
+                    print(Fore.RED + f"  {error_data['error']}")
+            except:
+                pass
+    
+    except ImportError:
+        print(Fore.RED + "Error: 'requests' module not installed")
+        print(Fore.YELLOW + "Install with: pip install requests")
+    except Exception as e:
+        print(Fore.RED + f"Error uploading to store: {e}")
 # ---------- Main OS ----------
 def mirage():
     splash_screen()
@@ -1246,10 +1433,19 @@ def mirage():
         elif command == "apps":
             list_apps()
         elif command == "switch":
+            # Clean up guest directory if switching from guest
+            if current_user == GUEST_USER:
+                cleanup_guest()
             current_user = switch_user()
             aliases = load_aliases()
+            current_user = switch_user()
+            aliases = load_aliases()
+                    
         elif command == "logout":
             print(Fore.CYAN + f"Logging out '{current_user}'...")
+            # Clean up guest directory if logging out as guest
+            if current_user == GUEST_USER:
+                cleanup_guest()
             current_user = login()
             aliases = load_aliases()
         elif command == "dusr":
@@ -1257,6 +1453,27 @@ def mirage():
         elif command == "exit":
             print(Fore.GREEN + "Exiting Mirage...")
             sys.exit()
+        elif command == "ms":
+            if len(parts) > 1:
+                if parts[1] == "list":
+                    mirage_store_list()
+                elif parts[1] == "download":
+                    if len(parts) > 2:
+                        mirage_store_download(parts[2])
+                    else:
+                        print(Fore.RED + "Usage: ms download FILENAME")
+                elif parts[1] == "upload":
+                    if len(parts) > 2:
+                        mirage_store_upload(parts[2], current_user)
+                    else:
+                        print(Fore.RED + "Usage: ms upload FILENAME")
+                else:
+                    print(Fore.RED + "Unknown ms command. Use: list, download, upload")
+            else:
+                print(Fore.YELLOW + "Mirage Store commands:")
+                print(Fore.CYAN + "  ms list           - List apps in store")
+                print(Fore.CYAN + "  ms download FILE  - Download app from store")
+                print(Fore.CYAN + "  ms upload FILE    - Upload app to store")
         else:
             print(Fore.RED + f"Unknown command: {command}")
             print(Fore.YELLOW + "Type 'help' for available commands")
