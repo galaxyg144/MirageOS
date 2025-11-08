@@ -13,6 +13,7 @@ import requests
 
 # Mirage Store API endpoint
 STORE_API = "https://miragestore.onrender.com"
+STORE_API_PING = "https://miragestore.onrender.com/ping"
 
 def ensure_imports(modules):
     """
@@ -1492,13 +1493,34 @@ def mirage():
                 elif subcmd == "ping":
                     print(Fore.YELLOW + "Pinging Mirage Store server...")
                     try:
-                        response = requests.post(STORE_API, json={"client": "MirageCLI"})
+                        response = requests.post(STORE_API_PING, json={"client": "MirageCLI"})
                         if response.status_code == 200:
-                            print(Fore.GREEN + f"✓ Mirage Store is online! ({response.text})")
+                            try:
+                                data = response.json()
+                                print(Fore.GREEN + "✓ Mirage Store is online!")
+                                print(Fore.CYAN + f"  Server:     {data.get('server', 'Unknown')}")
+                                print(Fore.CYAN + f"  Status:     {data.get('status', 'Unknown')}")
+                                print(Fore.CYAN + f"  B2 Status:  {data.get('b2_status', 'Unknown')}")
+                                print(Fore.CYAN + f"  Latency:    {data.get('latency_ms', 'N/A')} ms")
+                                print(Fore.CYAN + f"  Uptime:     {data.get('uptime', 'N/A')}")
+                                print(Fore.CYAN + f"  Timestamp:  {data.get('timestamp', 'N/A')}")
+                            except ValueError:
+                                print(Fore.RED + "✗ Invalid JSON response from server.")
+                                print(Fore.RED + f"Raw output: {response.text}")
                         else:
                             print(Fore.RED + f"✗ Server responded with status {response.status_code}: {response.text}")
                     except requests.exceptions.RequestException as e:
                         print(Fore.RED + f"✗ Could not reach Mirage Store: {e}")
+
+                        print(Fore.YELLOW + "Pinging Mirage Store server...")
+                        try:
+                                response = requests.post(STORE_API_PING, json={"client": "MirageCLI"})
+                                if response.status_code == 200:
+                                    print(Fore.GREEN + f"✓ Mirage Store is online! ({response.text})")
+                                else:
+                                    print(Fore.RED + f"✗ Server responded with status {response.status_code}: {response.text}")
+                        except requests.exceptions.RequestException as e:
+                                    print(Fore.RED + f"✗ Could not reach Mirage Store: {e}")
 
                 elif subcmd == "help":
                     print(Fore.YELLOW + "Mirage Store commands:")
