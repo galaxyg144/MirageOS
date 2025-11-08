@@ -331,7 +331,7 @@ def splash_screen():
     
     # Sunset-themed welcome message
     print(Fore.YELLOW + "\n✨ Welcome to Mirage ✨\n".center(width))
-    print(Fore.MAGENTA + "Version 1.2 ''eXchange''  \n".center(width))
+    print(Fore.MAGENTA + "Version 1.2 'eXchange'  \n".center(width))
     print(Fore.CYAN + "Type 'help' for commands\n".center(width))
 
 # ---------- New Utility Functions ----------
@@ -543,6 +543,11 @@ def help_menu():
     print(Fore.YELLOW + "  mapp list     " + Fore.WHITE + "- List all .mapp files")
     print(Fore.YELLOW + "  mapp new FILE " + Fore.WHITE + "- Create new .mapp template")
     print(Fore.YELLOW + "  run FILE.mapp " + Fore.WHITE + "- Run a .mapp application")
+    print(Fore.CYAN + "\n  === Mirage Store ===")
+    print(Fore.YELLOW + "  ms list" + Fore.WHITE + "- List all applications in the Mirage Store")
+    print(Fore.YELLOW + "  ms download FILE.mapp" + Fore.WHITE + "- Download an app from the Mirage Store")
+    print(Fore.YELLOW + "  ms upload FILE.mapp" + Fore.WHITE + "- Upload an app to the Mirage Store")
+
     print(Fore.CYAN + "\n  === File Operations ===")
     print(Fore.YELLOW + "  cat FILE      " + Fore.WHITE + "- Show file contents")
     print(Fore.YELLOW + "  head FILE [N] " + Fore.WHITE + "- Show first N lines (default 10)")
