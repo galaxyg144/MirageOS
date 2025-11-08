@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 :: Mirage CLI Tool - mir.bat
 :: Version 1.1.0
 
-set VERSION=1.1. "eXchange"
+set VERSION=1.1.1 "eXchange"
 set MIRAGE_DIR=%USERPROFILE%\.mirage
 set GITHUB_RELEASE=https://github.com/galaxyg144/MirageOS/releases/latest/download
 
