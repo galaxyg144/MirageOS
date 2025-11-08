@@ -149,6 +149,16 @@ def cleanup_guest():
     guest_dir = os.path.join(USERS_DIR, GUEST_USER)
     if os.path.exists(guest_dir):
         try:
+            # Change to parent directory first to avoid "in use" error
+            os.chdir(USERS_DIR)
+            shutil.rmtree(guest_dir)
+            print(Fore.CYAN + "✓ Guest session cleaned up")
+        except Exception as e:
+            print(Fore.YELLOW + f"Warning: Could not clean up guest directory: {e}")
+    """Clean up guest user directory"""
+    guest_dir = os.path.join(USERS_DIR, GUEST_USER)
+    if os.path.exists(guest_dir):
+        try:
             shutil.rmtree(guest_dir)
             print(Fore.CYAN + "✓ Guest session cleaned up")
         except Exception as e:
