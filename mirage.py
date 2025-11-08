@@ -9,6 +9,7 @@ import platform
 import random
 import time
 import importlib
+import requests
 
 # Mirage Store API endpoint
 STORE_API = "https://miragestore.onrender.com"
@@ -557,6 +558,8 @@ def help_menu():
     print(Fore.YELLOW + "  ms list          " + Fore.WHITE + "- List apps in the store")
     print(Fore.YELLOW + "  ms download FILE " + Fore.WHITE + "- Download app from store")
     print(Fore.YELLOW + "  ms upload FILE   " + Fore.WHITE + "- Upload app to store")
+    print(Fore.YELLOW + "  ms ping          " + Fore.WHITE + "- Ping the MirageStore server")
+
     print(Fore.CYAN + "\n  === File Operations ===")
     print(Fore.YELLOW + "  cat FILE         " + Fore.WHITE + "- Show file contents")
     print(Fore.YELLOW + "  head FILE [N]    " + Fore.WHITE + "- Show first N lines (default 10)")
@@ -1469,28 +1472,53 @@ def mirage():
             sys.exit()
         elif command == "ms":
             if len(parts) > 1:
-                if parts[1] == "list":
+                subcmd = parts[1]
+
+                if subcmd == "list":
                     mirage_store_list()
-                elif parts[1] == "download":
+
+                elif subcmd == "download":
                     if len(parts) > 2:
                         mirage_store_download(parts[2])
                     else:
                         print(Fore.RED + "Usage: ms download FILENAME")
-                elif parts[1] == "upload":
+
+                elif subcmd == "upload":
                     if len(parts) > 2:
                         mirage_store_upload(parts[2], current_user)
                     else:
                         print(Fore.RED + "Usage: ms upload FILENAME")
-                else:
-                    print(Fore.RED + "Unknown ms command. Use: list, download, upload")
+
+                elif subcmd == "ping":
+                    print(Fore.YELLOW + "Pinging Mirage Store server...")
+                    try:
+                        response = requests.post(STORE_API, json={"client": "MirageCLI"})
+                        if response.status_code == 200:
+                            print(Fore.GREEN + f"✓ Mirage Store is online! ({response.text})")
+                        else:
+                            print(Fore.RED + f"✗ Server responded with status {response.status_code}: {response.text}")
+                    except requests.exceptions.RequestException as e:
+                        print(Fore.RED + f"✗ Could not reach Mirage Store: {e}")
+
+                elif subcmd == "help":
+                    print(Fore.YELLOW + "Mirage Store commands:")
+                    print(Fore.CYAN + "  ms list           - List apps in store")
+                    print(Fore.CYAN + "  ms download FILE  - Download app from store")
+                    print(Fore.CYAN + "  ms upload FILE    - Upload app to store")
+                    print(Fore.CYAN + "  ms ping           - Check server connectivity")
+
             else:
-                print(Fore.YELLOW + "Mirage Store commands:")
-                print(Fore.CYAN + "  ms list           - List apps in store")
-                print(Fore.CYAN + "  ms download FILE  - Download app from store")
-                print(Fore.CYAN + "  ms upload FILE    - Upload app to store")
+                print(Fore.RED + "Unknown ms command. Use: list, download, upload, ping, help")
+
         else:
-            print(Fore.RED + f"Unknown command: {command}")
-            print(Fore.YELLOW + "Type 'help' for available commands")
+            print(Fore.YELLOW + "Mirage Store commands:")
+            print(Fore.CYAN + "  ms list           - List apps in store")
+            print(Fore.CYAN + "  ms download FILE  - Download app from store")
+            print(Fore.CYAN + "  ms upload FILE    - Upload app to store")
+            print(Fore.CYAN + "  ms ping           - Check server connectivity")
+    else:
+        print(Fore.RED + f"Unknown command: {command}")
+        print(Fore.YELLOW + "Type 'help' for available commands")
 
 if __name__ == "__main__":
     mirage()
