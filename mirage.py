@@ -564,6 +564,7 @@ def help_menu():
     print(Fore.YELLOW + "  run FILE.mapp    " + Fore.WHITE + "- Run a .mapp application")
     print(Fore.CYAN + "\n  === Mirage Store ===")
     print(Fore.YELLOW + "  ms list          " + Fore.WHITE + "- List apps in the store")
+    print(Fore.YELLOW + "  ms ping          " + Fore.WHITE + "- Ping the MirageStore servers")
     print(Fore.YELLOW + "  ms download FILE " + Fore.WHITE + "- Download app from store")
     print(Fore.YELLOW + "  ms upload FILE   " + Fore.WHITE + "- Upload app to store")
     print(Fore.CYAN + "\n  === File Operations ===")
@@ -1512,7 +1513,7 @@ def mirage():
                 elif parts[1] == "ping":
                     print(Fore.YELLOW + "Pinging Mirage Store server...")
                     try:
-                        response = requests.post(STORE_API_PING, json={"client": "MirageCLI"}, timeout=10)
+                        response = requests.post(STORE_API_PING, json={"client": "MirageCLI"}, timeout=30)
                         if response.status_code == 200:
                             try:
                                 data = response.json()
