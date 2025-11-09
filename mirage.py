@@ -7,9 +7,9 @@ from datetime import datetime
 import subprocess
 import platform
 import random
+import requests
 import time
 import importlib
-import requests
 
 # Mirage Store API endpoint
 STORE_API = "https://miragestore.onrender.com"
@@ -333,7 +333,14 @@ def splash_screen():
 """
     width = shutil.get_terminal_size((50, 20)).columns
     # Sunset gradient: Red -> Orange -> Yellow -> Magenta (purple sky)
-    sunset_colors = [Fore.RED, Fore.RED, Fore.YELLOW, Fore.YELLOW, Fore.MAGENTA, Fore.MAGENTA]
+    sunset_colors = [Fore.RED, 
+                     Fore.RED, 
+                     Fore.YELLOW, 
+                     Fore.YELLOW, 
+                     Fore.MAGENTA, 
+                     Fore.MAGENTA,
+                     Fore.WHITE,
+                     Fore.WHITE]
     
     lines = art.splitlines()
     for i, line in enumerate(lines):
@@ -559,8 +566,6 @@ def help_menu():
     print(Fore.YELLOW + "  ms list          " + Fore.WHITE + "- List apps in the store")
     print(Fore.YELLOW + "  ms download FILE " + Fore.WHITE + "- Download app from store")
     print(Fore.YELLOW + "  ms upload FILE   " + Fore.WHITE + "- Upload app to store")
-    print(Fore.YELLOW + "  ms ping          " + Fore.WHITE + "- Ping the MirageStore server")
-
     print(Fore.CYAN + "\n  === File Operations ===")
     print(Fore.YELLOW + "  cat FILE         " + Fore.WHITE + "- Show file contents")
     print(Fore.YELLOW + "  head FILE [N]    " + Fore.WHITE + "- Show first N lines (default 10)")
@@ -1051,36 +1056,43 @@ def run_file(filename):
         print(Fore.YELLOW + f"Cannot run '{ext}' files. Use 'edit {filename}' to view/edit.")
 
 # ---------- Mirage Store Functions ----------
-def mirage_store_list():
-    """List all apps in the Mirage Store"""
+def mirage_store_list(page_size=5):
+    """List all apps in the Mirage Store with pagination"""
     try:
-        import requests
+        import requests, json
         print(Fore.CYAN + "📦 Fetching apps from Mirage Store...")
         response = requests.get(f"{STORE_API}/apps", timeout=10)
         
-        if response.status_code == 200:
-            apps = response.json()
-            
-            if not apps:
-                print(Fore.YELLOW + "No apps in the store yet.")
-                return
+        if response.status_code != 200:
+            print(Fore.RED + f"Error fetching store apps: HTTP {response.status_code}")
+            return
+        
+        apps = response.json()
+        if not apps:
+            print(Fore.YELLOW + "No apps in the store yet.")
+            return
+        
+        apps = sorted(apps)
+        total = len(apps)
+        total_pages = (total + page_size - 1) // page_size
+        page = 0
+        
+        while True:
+            start = page * page_size
+            end = min(start + page_size, total)
+            current_apps = apps[start:end]
             
             print(Fore.CYAN + "═" * 60)
-            print(Fore.CYAN + "Available Apps in Mirage Store:")
+            print(Fore.CYAN + f"Available Apps in Mirage Store (Page {page + 1}/{total_pages})")
             print(Fore.CYAN + "═" * 60)
             
-            for app_file in sorted(apps):
-                # Parse the filename to extract info
-                # Format could be: filename.mapp or filename-code.mapp
+            for app_file in current_apps:
                 base_name = app_file.replace('.mapp', '')
-                
                 print(Fore.BLUE + f"📦 {app_file}")
                 
-                # Try to download and parse metadata without saving
                 try:
                     meta_response = requests.get(f"{STORE_API}/apps/{app_file}", timeout=10)
                     if meta_response.status_code == 200:
-                        # Parse the .mapp file to extract metadata
                         content = meta_response.text
                         json_start = content.find('[JSON]')
                         json_end = content.find('[JSONEND]')
@@ -1092,20 +1104,32 @@ def mirage_store_list():
                             name = metadata.get('name', 'Unknown')
                             version = metadata.get('version', '?')
                             author = metadata.get('author', 'Unknown')
+                            desc = metadata.get('description', '')
                             
-                            print(Fore.YELLOW + f"   {name} " + Fore.WHITE + f"v{version}")
+                            print(Fore.YELLOW + f"  📦 Name: {name}")
+                            print(Fore.WHITE + f"   🔖 Version: {version}")
                             print(Fore.WHITE + f"   👤 Author: {author}")
-                            
-                            if 'description' in metadata:
-                                print(Fore.WHITE + f"   {metadata['description']}")
-                except:
-                    # If we can't parse metadata, just show filename
+                            if desc:
+                                print(Fore.WHITE + f"   📄 Description: {desc}")
+                except Exception:
                     pass
-                
                 print()
-        else:
-            print(Fore.RED + f"Error fetching store apps: HTTP {response.status_code}")
-    
+            
+            # Pagination controls
+            print(Fore.CYAN + f"Showing {start + 1}-{end} of {total} apps")
+            if total_pages > 1:
+                choice = input(Fore.GREEN + "Enter (n)ext, (p)rev, or (q)uit: ").strip().lower()
+                if choice == 'n' and page < total_pages - 1:
+                    page += 1
+                elif choice == 'p' and page > 0:
+                    page -= 1
+                elif choice == 'q':
+                    break
+                else:
+                    print(Fore.RED + "Invalid choice.")
+            else:
+                break
+
     except ImportError:
         print(Fore.RED + "Error: 'requests' module not installed")
         print(Fore.YELLOW + "Install with: pip install requests")
@@ -1473,24 +1497,19 @@ def mirage():
             sys.exit()
         elif command == "ms":
             if len(parts) > 1:
-                subcmd = parts[1]
-
-                if subcmd == "list":
+                if parts[1] == "list":
                     mirage_store_list()
-
-                elif subcmd == "download":
+                elif parts[1] == "download":
                     if len(parts) > 2:
                         mirage_store_download(parts[2])
                     else:
                         print(Fore.RED + "Usage: ms download FILENAME")
-
-                elif subcmd == "upload":
+                elif parts[1] == "upload":
                     if len(parts) > 2:
                         mirage_store_upload(parts[2], current_user)
                     else:
                         print(Fore.RED + "Usage: ms upload FILENAME")
-
-                elif subcmd == "ping":
+                elif parts[1] == "ping":
                     print(Fore.YELLOW + "Pinging Mirage Store server...")
                     try:
                         response = requests.post(STORE_API_PING, json={"client": "MirageCLI"})
@@ -1511,36 +1530,17 @@ def mirage():
                             print(Fore.RED + f"✗ Server responded with status {response.status_code}: {response.text}")
                     except requests.exceptions.RequestException as e:
                         print(Fore.RED + f"✗ Could not reach Mirage Store: {e}")
-
-                        print(Fore.YELLOW + "Pinging Mirage Store server...")
-                        try:
-                                response = requests.post(STORE_API_PING, json={"client": "MirageCLI"})
-                                if response.status_code == 200:
-                                    print(Fore.GREEN + f"✓ Mirage Store is online! ({response.text})")
-                                else:
-                                    print(Fore.RED + f"✗ Server responded with status {response.status_code}: {response.text}")
-                        except requests.exceptions.RequestException as e:
-                                    print(Fore.RED + f"✗ Could not reach Mirage Store: {e}")
-
-                elif subcmd == "help":
-                    print(Fore.YELLOW + "Mirage Store commands:")
-                    print(Fore.CYAN + "  ms list           - List apps in store")
-                    print(Fore.CYAN + "  ms download FILE  - Download app from store")
-                    print(Fore.CYAN + "  ms upload FILE    - Upload app to store")
-                    print(Fore.CYAN + "  ms ping           - Check server connectivity")
+                else:
+                    print(Fore.RED + "Unknown ms command. Use: list, download, upload, ping")
 
             else:
-                print(Fore.RED + "Unknown ms command. Use: list, download, upload, ping, help")
-
+                print(Fore.YELLOW + "Mirage Store commands:")
+                print(Fore.CYAN + "  ms list           - List apps in store")
+                print(Fore.CYAN + "  ms download FILE  - Download app from store")
+                print(Fore.CYAN + "  ms upload FILE    - Upload app to store")
+                print(Fore.CYAN + "  ms ping           - Ping The Mirage Store servers" )
         else:
-            print(Fore.YELLOW + "Mirage Store commands:")
-            print(Fore.CYAN + "  ms list           - List apps in store")
-            print(Fore.CYAN + "  ms download FILE  - Download app from store")
-            print(Fore.CYAN + "  ms upload FILE    - Upload app to store")
-            print(Fore.CYAN + "  ms ping           - Check server connectivity")
-    else:
-        print(Fore.RED + f"Unknown command: {command}")
-        print(Fore.YELLOW + "Type 'help' for available commands")
-
+            print(Fore.RED + f"Unknown command: {command}")
+            print(Fore.YELLOW + "Type 'help' for available commands")
 if __name__ == "__main__":
     mirage()

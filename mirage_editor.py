@@ -8,7 +8,7 @@ def main(stdscr, filename="untitled.txt"):
     
     # Initialize colors with better scheme
     if curses.has_colors():
-        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)      # Header
+        curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)      # Header
         curses.init_pair(2, curses.COLOR_CYAN, curses.COLOR_BLACK)      # Line numbers
         curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK)    # Cursor
         curses.init_pair(4, curses.COLOR_WHITE, curses.COLOR_RED)       # Error

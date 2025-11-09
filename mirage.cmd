@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: Mirage CLI Tool - mir.bat
-:: Version 1.1.0
+:: Version 1.1.1 - Fixed Edition
 
 set VERSION=1.1.1 "eXchange"
 set MIRAGE_DIR=%USERPROFILE%\.mirage
@@ -130,6 +130,17 @@ if exist "%MIRAGE_DIR%\mirage.py" (
     echo Status:       Not installed - run 'mir download'
 )
 echo.
+
+:: Check PATH status by actually querying the registry
+echo Checking PATH status...
+for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set USER_PATH=%%B
+echo !USER_PATH! | find /I "%MIRAGE_DIR%" >nul
+if !ERRORLEVEL! EQU 0 (
+    echo PATH Status:  Added to User PATH
+) else (
+    echo PATH Status:  NOT in User PATH - run 'mir path'
+)
+echo.
 exit /b 0
 
 :ShowInfoMenu
@@ -172,14 +183,19 @@ echo   Adding Mirage to System PATH
 echo ========================================
 echo.
 
+:: Check PATH by reading registry directly
+for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set USER_PATH=%%B
+
 :: Check if already in PATH
-echo %PATH% | find /I "%MIRAGE_DIR%" >nul
-if %ERRORLEVEL% EQU 0 (
-    echo Mirage is already in your PATH!
+echo !USER_PATH! | find /I "%MIRAGE_DIR%" >nul
+if !ERRORLEVEL! EQU 0 (
+    echo Mirage is already in your User PATH!
+    echo.
+    echo If 'mir' command still doesn't work, close and reopen your terminal.
     exit /b 0
 )
 
-echo This will add %MIRAGE_DIR% to your system PATH.
+echo This will add %MIRAGE_DIR% to your User PATH.
 echo You'll be able to run 'mir' from anywhere.
 echo.
 set /p CONFIRM="Continue? (Y/N): "
@@ -188,24 +204,61 @@ if /I not "!CONFIRM!"=="Y" (
     exit /b 0
 )
 
-:: Add to User PATH using PowerShell
-powershell -Command "$currentPath = [Environment]::GetEnvironmentVariable('PATH', 'User'); if ($currentPath -notlike '*%MIRAGE_DIR%*') { [Environment]::SetEnvironmentVariable('PATH', $currentPath + ';%MIRAGE_DIR%', 'User') }"
+:: Add to User PATH using setx (more reliable than PowerShell for this)
+echo.
+echo Adding to PATH...
 
-if %ERRORLEVEL% EQU 0 (
+:: Get current PATH
+for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set CURRENT_PATH=%%B
+
+:: Check if PATH is empty
+if "!CURRENT_PATH!"=="" (
+    setx PATH "%MIRAGE_DIR%" >nul 2>&1
+) else (
+    :: Check if path already ends with semicolon
+    if "!CURRENT_PATH:~-1!"==";" (
+        setx PATH "!CURRENT_PATH!%MIRAGE_DIR%" >nul 2>&1
+    ) else (
+        setx PATH "!CURRENT_PATH!;%MIRAGE_DIR%" >nul 2>&1
+    )
+)
+
+if !ERRORLEVEL! EQU 0 (
     echo.
-    echo SUCCESS! Mirage has been added to your PATH.
+    echo ========================================
+    echo   SUCCESS!
+    echo ========================================
+    echo.
+    echo Mirage has been added to your User PATH.
     echo.
     echo IMPORTANT: Close and reopen your terminal for changes to take effect.
     echo After that, you can run 'mir' from anywhere!
     echo.
+    
+    :: Verify it was added
+    for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set VERIFY_PATH=%%B
+    echo !VERIFY_PATH! | find /I "%MIRAGE_DIR%" >nul
+    if !ERRORLEVEL! EQU 0 (
+        echo Verification: PATH successfully updated in registry
+    ) else (
+        echo WARNING: Could not verify PATH update
+    )
+    echo.
 ) else (
     echo.
-    echo ERROR: Failed to add to PATH. You may need administrator privileges.
+    echo ========================================
+    echo   ERROR
+    echo ========================================
+    echo.
+    echo Failed to add to PATH. This might happen if:
+    echo   - The PATH variable is too long (over 1024 characters)
+    echo   - You need administrator privileges
     echo.
     echo Manual instructions:
-    echo 1. Open System Properties ^> Environment Variables
-    echo 2. Edit the PATH variable for your user
-    echo 3. Add: %MIRAGE_DIR%
+    echo 1. Press Win+R, type: sysdm.cpl
+    echo 2. Go to Advanced tab ^> Environment Variables
+    echo 3. Under User variables, edit PATH
+    echo 4. Add: %MIRAGE_DIR%
     echo.
 )
 exit /b 0
@@ -230,7 +283,7 @@ set FILES=mirage.py mirage_editor.py
 
 :: Check if curl is available
 where curl >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
+if !ERRORLEVEL! NEQ 0 (
     echo ERROR: curl not found.
     echo Please install curl, or download files manually from GitHub releases:
     echo https://github.com/galaxyg144/MirageOS/releases/latest
@@ -238,22 +291,26 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
+set DOWNLOAD_FAILED=0
+
 :: Download each file from the latest release
 for %%F in (%FILES%) do (
     echo Downloading %%F...
-    curl -L -H "User-Agent: MirageCLI" -o "%MIRAGE_DIR%\%%F" "%GITHUB_RELEASE%/%%F"
+    curl -L -H "User-Agent: MirageCLI" -o "%MIRAGE_DIR%\%%F" "%GITHUB_RELEASE%/%%F" 2>nul
 
     :: Check if file exists and is not empty
     if exist "%MIRAGE_DIR%\%%F" (
-        for %%S in ("%MIRAGE_DIR%\%%F") do if %%~zS NEQ 0 (
-            echo       SUCCESS - %%F downloaded
-        ) else (
-            echo       FAILED - %%F is empty
-            echo       Please check the latest release on GitHub
+        for %%S in ("%MIRAGE_DIR%\%%F") do (
+            if %%~zS GTR 0 (
+                echo       SUCCESS - %%F downloaded
+            ) else (
+                echo       FAILED - %%F is empty
+                set DOWNLOAD_FAILED=1
+            )
         )
     ) else (
         echo       FAILED - %%F not downloaded
-        echo       Please check the latest release on GitHub
+        set DOWNLOAD_FAILED=1
     )
 )
 
@@ -262,15 +319,8 @@ echo ========================================
 echo   Download Complete!
 echo ========================================
 echo.
-echo Files installed to: %MIRAGE_DIR%
-echo.
-echo NOTE: mir.bat was not updated to avoid conflicts.
-echo       To update mir.bat, download it manually from GitHub.
-echo.
-echo You can now run: mir run
-echo.
-exit /b 0
-if %DOWNLOAD_FAILED% GTR 0 (
+
+if !DOWNLOAD_FAILED! GTR 0 (
     echo WARNING: Some files failed to download.
     echo Please check your internet connection or visit:
     echo https://github.com/galaxyg144/MirageOS/releases/latest
@@ -278,6 +328,9 @@ if %DOWNLOAD_FAILED% GTR 0 (
 ) else (
     echo All files downloaded successfully!
     echo Files installed to: %MIRAGE_DIR%
+    echo.
+    echo NOTE: mir.bat was not updated to avoid conflicts.
+    echo       To update mir.bat, download it manually from GitHub.
     echo.
     echo You can now run: mir run
     echo.
@@ -294,7 +347,7 @@ goto :MainMenu
 :RunMirage
 :: Check if Python is installed
 where python >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
+if !ERRORLEVEL! NEQ 0 (
     echo ERROR: Python is not installed or not in PATH
     echo Please install Python from https://www.python.org/
     exit /b 1
@@ -329,25 +382,64 @@ echo ========================================
 echo.
 echo This will:
 echo   - Delete %MIRAGE_DIR%
-echo   - Remove Mirage from your PATH
+echo   - Remove Mirage from your User PATH
 echo.
 echo WARNING: This will NOT delete user data in ~/MirageUsers
 echo.
-set /p CONFIRM="Are you sure? (yes/no): "
+set /p CONFIRM="Are you sure? Type 'yes' to confirm: "
 if /I not "!CONFIRM!"=="yes" (
     echo Uninstall cancelled.
     exit /b 0
 )
 
 echo.
-echo Removing Mirage files...
-if exist "%MIRAGE_DIR%" (
-    rmdir /S /Q "%MIRAGE_DIR%"
-    echo Files deleted.
+echo Removing from PATH...
+
+:: Get current PATH from registry
+for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set CURRENT_PATH=%%B
+
+:: Remove Mirage directory from PATH
+set NEW_PATH=!CURRENT_PATH!
+
+:: Replace the Mirage path with nothing (handle with and without semicolons)
+set NEW_PATH=!NEW_PATH:%MIRAGE_DIR%;=!
+set NEW_PATH=!NEW_PATH:;%MIRAGE_DIR%=!
+set NEW_PATH=!NEW_PATH:%MIRAGE_DIR%=!
+
+:: Update PATH if it changed
+if not "!NEW_PATH!"=="!CURRENT_PATH!" (
+    setx PATH "!NEW_PATH!" >nul 2>&1
+    if !ERRORLEVEL! EQU 0 (
+        echo PATH updated successfully
+        
+        :: Verify removal
+        for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set VERIFY_PATH=%%B
+        echo !VERIFY_PATH! | find /I "%MIRAGE_DIR%" >nul
+        if !ERRORLEVEL! NEQ 0 (
+            echo Verification: Mirage successfully removed from PATH
+        ) else (
+            echo WARNING: Mirage might still be in PATH
+        )
+    ) else (
+        echo WARNING: Failed to update PATH
+    )
+) else (
+    echo Mirage was not found in PATH
 )
 
-echo Removing from PATH...
-powershell -Command "$currentPath = [Environment]::GetEnvironmentVariable('PATH', 'User'); $newPath = ($currentPath -split ';' | Where-Object { $_ -ne '%MIRAGE_DIR%' }) -join ';'; [Environment]::SetEnvironmentVariable('PATH', $newPath, 'User')"
+echo.
+echo Removing Mirage files...
+if exist "%MIRAGE_DIR%" (
+    rmdir /S /Q "%MIRAGE_DIR%" 2>nul
+    if !ERRORLEVEL! EQU 0 (
+        echo Files deleted successfully
+    ) else (
+        echo WARNING: Some files could not be deleted
+        echo You may need to delete %MIRAGE_DIR% manually
+    )
+) else (
+    echo No Mirage directory found
+)
 
 echo.
 echo ========================================
@@ -357,7 +449,7 @@ echo.
 echo Mirage has been removed from your system.
 echo User data in ~/MirageUsers was preserved.
 echo.
-echo Close and reopen your terminal for PATH changes to take effect.
+echo IMPORTANT: Close and reopen your terminal for PATH changes to take effect.
 echo.
 exit /b 0
 
