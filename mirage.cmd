@@ -449,7 +449,7 @@ echo.
 echo Mirage has been removed from your system.
 echo User data in ~/MirageUsers was preserved.
 echo.
-echo IMPORTANT: Close and reopen your terminal for PATH changes to take effect.
+echo IMPORTANT: Close and reopen your terminal or run refreshenv for PATH changes to take effect.
 echo.
 exit /b 0
 

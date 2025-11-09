@@ -1091,7 +1091,7 @@ def mirage_store_list(page_size=5):
                 print(Fore.BLUE + f"📦 {app_file}")
                 
                 try:
-                    meta_response = requests.get(f"{STORE_API}/apps/{app_file}", timeout=10)
+                    meta_response = requests.get(f"{STORE_API}/apps/{app_file}", timeout=30)
                     if meta_response.status_code == 200:
                         content = meta_response.text
                         json_start = content.find('[JSON]')
@@ -1512,7 +1512,7 @@ def mirage():
                 elif parts[1] == "ping":
                     print(Fore.YELLOW + "Pinging Mirage Store server...")
                     try:
-                        response = requests.post(STORE_API_PING, json={"client": "MirageCLI"})
+                        response = requests.post(STORE_API_PING, json={"client": "MirageCLI"}, timeout=10)
                         if response.status_code == 200:
                             try:
                                 data = response.json()
