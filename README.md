@@ -1,8 +1,8 @@
 # Welcome To MirageOS!
-The Terminal Line OS!
+A Python Based CLI
 ---
 
-As it said in the text this is a terminal os.
+As it said in the text this is a CLI
 
 # How To Install?
 Installing MirageOS is quite simple. just follow these steps!
