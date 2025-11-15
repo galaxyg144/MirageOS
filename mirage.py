@@ -355,8 +355,8 @@ def splash_screen():
             print(color + line.center(width))
     
     # Sunset-themed welcome message
-    print(Fore.YELLOW + "\n✨ Welcome to Mirage ✨\n".center(width))
-    print(Fore.MAGENTA + "Version 1.1.1 'eXchange'  \n".center(width))
+    print(Fore.YELLOW + "\n Welcome to Mirage ✨\n".center(width))
+    print(Fore.MAGENTA + "Version 1.2 'eXchange'  \n".center(width))
     print(Fore.CYAN + "Type 'help' for commands\n".center(width))
 
 # ---------- New Utility Functions ----------
