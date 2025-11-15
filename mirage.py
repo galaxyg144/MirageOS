@@ -9,7 +9,10 @@ import platform
 import random
 import requests
 import time
+import zipfile
 import importlib
+import tomllib  # Python 3.11+; use `import toml` if lower
+import tempfile
 
 # Mirage Store API endpoint
 STORE_API = "https://miragestore.onrender.com"
@@ -36,7 +39,10 @@ ensure_imports([
     "colorama",
     "fortune",
     "random",
-    "requests"
+    "requests",
+    "zipfile",
+    "tomllib",
+    "tempfile"
 ])
 
 
@@ -491,7 +497,7 @@ def uptime_info():
     """Show system uptime (simulated for Mirage)"""
     try:
         # Get Python process uptime as proxy
-        print(Fore.CYAN + "⏱️  Mirage Session Info:")
+        print(Fore.CYAN + "  Mirage Session Info:")
         print(Fore.YELLOW + f"   Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(Fore.YELLOW + f"   Platform: {platform.system()} {platform.release()}")
     except Exception as e:
@@ -845,147 +851,286 @@ def pull_file(source_path):
     except Exception as e:
         print(Fore.RED + f"Error pulling file: {e}")
 
-def parse_mapp_file(filename):
-    """Parse a .mapp (Mirage Application) file"""
-    try:
-        with open(filename, 'r') as f:
-            content = f.read()
-        
-        # Extract JSON metadata
-        json_start = content.find('[JSON]')
-        json_end = content.find('[JSONEND]')
-        
-        # Extract Python code
-        py_start = content.find('[PY]')
-        py_end = content.find('[PYEND]')
-        
-        if json_start == -1 or json_end == -1:
-            print(Fore.RED + "Error: Invalid .mapp format - missing [JSON] or [JSONEND]")
-            return None, None
-        
-        if py_start == -1 or py_end == -1:
-            print(Fore.RED + "Error: Invalid .mapp format - missing [PY] or [PYEND]")
-            return None, None
-        
-        # Parse JSON metadata
-        json_str = content[json_start + 6:json_end].strip()
-        try:
-            metadata = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            print(Fore.RED + f"Error parsing JSON metadata: {e}")
-            return None, None
-        
-        # Extract Python code
-        code = content[py_start + 4:py_end].strip()
-        
-        return metadata, code
-    
-    except FileNotFoundError:
-        print(Fore.RED + "File not found.")
-        return None, None
-    except Exception as e:
-        print(Fore.RED + f"Error reading .mapp file: {e}")
-        return None, None
 
-def run_mapp(filename):
-    """Run a .mapp (Mirage Application) file"""
-    print(Fore.CYAN + f"Loading Mirage Application: {filename}")
-    
-    metadata, code = parse_mapp_file(filename)
-    if metadata is None or code is None:
+
+
+def parse_mapp_file(filename):
+    """Parse a .mapp file (zip-based Mirage Application)"""
+    if not zipfile.is_zipfile(filename):
+        print(Fore.RED + "Error: Not a valid .mapp (zip) file")
+        return None, None, None
+
+    try:
+        with zipfile.ZipFile(filename, 'r') as zf:
+            if "manifest.toml" not in zf.namelist():
+                print(Fore.RED + "Error: manifest.toml not found in .mapp")
+                return None, None, None
+
+            # Read manifest.toml
+            with zf.open("manifest.toml") as mf:
+                manifest = tomllib.load(mf)
+
+            entry_point = manifest["app"].get("entry_point", "main.py")
+            if entry_point not in zf.namelist():
+                print(Fore.RED + f"Error: Entry point '{entry_point}' not found in .mapp")
+                return None, None, None
+
+            # Extract entry point to a temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
+                temp_file.write(zf.read(entry_point))
+                temp_path = temp_file.name
+
+        return manifest, temp_path, entry_point
+
+    except Exception as e:
+        print(Fore.RED + f"Error parsing .mapp: {e}")
+        return None, None, None
+
+
+def run_mapp(path):
+    """
+    Run a Mirage Application.
+    Supports:
+    - Folder-based .mapp (manifest.toml + Python files)
+    - Old-style .mapp (single file with [JSON]/[PY] sections)
+    - Packaged zip-based .mapp
+    """
+    if os.path.isdir(path):
+        # Folder-based
+        manifest_path = os.path.join(path, "manifest.toml")
+        if not os.path.exists(manifest_path):
+            print(Fore.RED + "manifest.toml not found in folder-based .mapp")
+            return
+
+        try:
+            import tomllib  # Python 3.11+
+        except ModuleNotFoundError:
+            import tomllib
+
+        with open(manifest_path, "rb") as f:
+            manifest = tomllib.load(f)
+
+        entry = manifest["app"].get("entry_point", "main.py")
+        app_path = os.path.join(path, entry)
+        if not os.path.exists(app_path):
+            print(Fore.RED + f"Entry point '{entry}' not found in folder-based .mapp")
+            return
+
+        interactive = manifest["app"].get("interactive", True)
+        meta = manifest.get("meta", {})
+
+        print(Fore.CYAN + f"Running {meta.get('name', 'Unknown')} v{meta.get('version', 'Unknown')}...")
+        try:
+            if interactive:
+                subprocess.run(["python", app_path])
+            else:
+                result = subprocess.run(["python", app_path], capture_output=True, text=True)
+                print(result.stdout)
+                if result.stderr:
+                    print(Fore.RED + result.stderr)
+        except Exception as e:
+            print(Fore.RED + f"Application error: {e}")
+
+    elif zipfile.is_zipfile(path):
+        # Packaged zip-based .mapp
+        with zipfile.ZipFile(path, "r") as zf:
+            if "manifest.toml" not in zf.namelist():
+                print(Fore.RED + "manifest.toml not found in packaged .mapp")
+                return
+
+            try:
+                import tomllib
+            except ModuleNotFoundError:
+                import tomllib
+
+            with zf.open("manifest.toml") as f:
+                manifest = tomllib.load(f)
+
+            entry = manifest["app"].get("entry_point", "main.py")
+            if entry not in zf.namelist():
+                print(Fore.RED + f"Entry point '{entry}' not found in packaged .mapp")
+                return
+
+            # Extract entry to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
+                temp_file.write(zf.read(entry))
+                temp_path = temp_file.name
+
+            interactive = manifest["app"].get("interactive", True)
+            meta = manifest.get("meta", {})
+
+            print(Fore.CYAN + f"Running {meta.get('name', 'Unknown')} v{meta.get('version', 'Unknown')}...")
+            print(Fore.RED + f"Warning: This is an old version .mapp file (1.1-)")
+            try:
+                if interactive:
+                    subprocess.run(["python", temp_path])
+                else:
+                    result = subprocess.run(["python", temp_path], capture_output=True, text=True)
+                    print(result.stdout)
+                    if result.stderr:
+                        print(Fore.RED + result.stderr)
+            finally:
+                os.remove(temp_path)
+
+    else:
+        # Old-style single-file .mapp
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Extract JSON metadata
+            json_start = content.find("[JSON]")
+            json_end = content.find("[JSONEND]")
+            py_start = content.find("[PY]")
+            py_end = content.find("[PYEND]")
+
+            if json_start == -1 or json_end == -1 or py_start == -1 or py_end == -1:
+                print(Fore.RED + "Invalid old-style .mapp format")
+                return
+
+            json_str = content[json_start + 6 : json_end].strip()
+            metadata = json.loads(json_str)
+            code = content[py_start + 4 : py_end].strip()
+
+            print(Fore.CYAN + f"Running {metadata.get('name', 'Unknown')} v{metadata.get('version', 'Unknown')}...")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
+                temp_file.write(code.encode("utf-8"))
+                temp_path = temp_file.name
+
+            interactive = metadata.get("interactive", True)
+            if interactive:
+                subprocess.run(["python", temp_path])
+            else:
+                result = subprocess.run(["python", temp_path], capture_output=True, text=True)
+                print(result.stdout)
+                if result.stderr:
+                    print(Fore.RED + result.stderr)
+
+        except Exception as e:
+            print(Fore.RED + f"Error running old-style .mapp: {e}")
+        finally:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+    """Run a .mapp file"""
+    print(Fore.CYAN + f"Loading Mirage Application: {path}")
+    manifest, temp_path, entry_point = parse_mapp_file(path)
+    if not manifest or not temp_path:
         return
-    
-    # Display app info
+
+    meta = manifest["meta"]
+    app_info = [
+        f"📦 App: {meta.get('name', 'Unknown')}",
+        f"🔖 Version: {meta.get('version', 'Unknown')}"
+    ]
+    if 'author' in meta:
+        app_info.append(f"👤 Author: {meta['author']}")
+    if 'description' in meta:
+        app_info.append(f"📝 Description: {meta['description']}")
+
     print(Fore.CYAN + "═" * 50)
-    print(Fore.YELLOW + f"📦 App: " + Fore.WHITE + metadata.get('name', 'Unknown'))
-    print(Fore.YELLOW + f"🔖 Version: " + Fore.WHITE + metadata.get('version', 'Unknown'))
-    if 'author' in metadata:
-        print(Fore.YELLOW + f"👤 Author: " + Fore.WHITE + metadata['author'])
-    if 'description' in metadata:
-        print(Fore.YELLOW + f"📝 Description: " + Fore.WHITE + metadata['description'])
+    for info in app_info:
+        print(Fore.YELLOW + info)
     print(Fore.CYAN + "═" * 50)
 
     run_confirm = input(Fore.YELLOW + "Run this application? (yes/no): ").strip().lower()
     if run_confirm != 'yes':
         print(Fore.YELLOW + "Execution cancelled.")
+        os.remove(temp_path)
         return
-    
+
     print(Fore.GREEN + "\n▶ Running application...\n")
-    
-    import tempfile, subprocess, os
-    
     try:
-        # Write the Python section to a temp file
-        app_name = metadata.get("name", "MirageApp").replace(" ", "_")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".py", prefix=f"{app_name}_") as temp_file:
-            temp_file.write(code.encode('utf-8'))
-            temp_path = temp_file.name
-        
-        # Decide how to run (interactive or silent)
-        interactive = metadata.get("interactive", True)
-        
+        interactive = manifest["app"].get("interactive", True)
         if interactive:
-            subprocess.run(["python", temp_path])  # full console access
+            subprocess.run(["python", temp_path])
         else:
             result = subprocess.run(["python", temp_path], capture_output=True, text=True)
             print(result.stdout)
             if result.stderr:
                 print(Fore.RED + result.stderr)
-        
         print(Fore.GREEN + "\n✓ Application completed successfully")
-    
     except Exception as e:
         print(Fore.RED + f"\n✗ Application error: {e}")
     finally:
-        # Clean up temp file
-        try:
-            os.remove(temp_path)
-        except Exception:
-            pass
+        os.remove(temp_path)
 
-def create_mapp_template(filename):
-    """Create a template .mapp file"""
-    if os.path.exists(filename):
-        overwrite = input(Fore.YELLOW + f"'{filename}' already exists. Overwrite? (yes/no): ").strip().lower()
+import os
+from colorama import Fore
+
+def create_mapp_template(foldername):
+    """Create a folder-based .mapp template"""
+    if os.path.exists(foldername):
+        overwrite = input(Fore.YELLOW + f"'{foldername}' already exists. Overwrite? (yes/no): ").strip().lower()
         if overwrite != 'yes':
             print(Fore.YELLOW + "Cancelled.")
             return
-    
-    template = '''[JSON]
-{
-  "name": "My Mirage App",
-  "version": "1.0.0",
-  "author": "Your Name",
-  "description": "A simple Mirage application"
+        # Clear existing folder
+        for root, dirs, files in os.walk(foldername, topdown=False):
+            for name in files:
+                os.remove(os.path.join(root, name))
+            for name in dirs:
+                os.rmdir(os.path.join(root, name))
+
+    os.makedirs(foldername, exist_ok=True)
+
+    # Create manifest.toml
+    manifest = """[meta]
+name = "My Mirage App"
+version = "1.0.0"
+author = "Your Name"
+description = "A simple Mirage application"
+
+[app]
+entry_point = "main.py"
+interactive = true
+"""
+    with open(os.path.join(foldername, "manifest.toml"), 'w', encoding='utf-8') as f:
+        f.write(manifest)
+
+    # Create main.py
+    main_py = '''from colorama import Fore, init
+init(autoreset=True)
+
+metadata = {
+    "name": "My Mirage App",
+    "version": "1.0.0",
+    "author": "Your Name",
+    "description": "A simple Mirage application"
 }
-[JSONEND]
-[PY]
-# Your Mirage Application Code
-print(Fore.CYAN + "Hello from " + metadata['name'] + "!")
-print(Fore.YELLOW + "Version: " + metadata['version'])
 
-# You have access to:
-# - metadata: The JSON metadata dictionary
-# - Fore, Style: Colorama for colored output
-# - os, sys, datetime, json: Standard Python modules
-# - All standard Python built-ins
-
-# Example: Get user input
+print(Fore.CYAN + f"Hello from {metadata['name']}!")
 name = input(Fore.MAGENTA + "What's your name? ")
 print(Fore.GREEN + f"Nice to meet you, {name}!")
-[PYEND]
 '''
-    
-    try:
-        with open(filename, 'w') as f:
-            f.write(template)
-        print(Fore.GREEN + f"✓ Created template .mapp file: {filename}")
-        print(Fore.CYAN + f"Edit with: edit {filename}")
-        print(Fore.CYAN + f"Run with: run {filename}")
-    except Exception as e:
-        print(Fore.RED + f"Error creating template: {e}")
+    with open(os.path.join(foldername, "main.py"), 'w', encoding='utf-8') as f:
+        f.write(main_py)
 
-def list_mapps():
+    # Optional: create utils.py
+    utils_py = '''from colorama import Fore
+
+def greet_user(name):
+    print(Fore.GREEN + f"Nice to meet you, {name}!")
+'''
+    with open(os.path.join(foldername, "utils.py"), 'w', encoding='utf-8') as f:
+        f.write(utils_py)
+
+    print(Fore.GREEN + f"✓ Created template Mirage App folder: {foldername}")
+    print(Fore.CYAN + f"Edit the files inside {foldername} and run them with your loader.")
+
+
+def list_mapps(directory):
+    """List all .mapp files in a directory"""
+    files = [f for f in os.listdir(directory) if f.endswith(".mapp")]
+    if not files:
+        print(Fore.YELLOW + "No .mapp files found.")
+        return
+    print(Fore.CYAN + "Available .mapps:")
+    for f in files:
+        print(Fore.GREEN + f" - {f}")
+
     """List all .mapp files in current directory"""
     mapps = [f for f in os.listdir('.') if f.endswith('.mapp')]
     
@@ -1007,6 +1152,59 @@ def list_mapps():
             if 'description' in metadata:
                 print(Fore.WHITE + f"   {metadata['description']}")
             print()
+
+def package_mapp_command(parts):
+    """
+    Handles the 'mapp package <dir>' command
+    parts: list of command parts, e.g., ["mapp", "package", "MyApp"]
+    """
+    if len(parts) < 3:
+        print(Fore.RED + "Usage: mapp package <dir>")
+        return
+
+    folder_path = parts[2]
+
+    if not os.path.isdir(folder_path):
+        print(Fore.RED + f"Folder not found: {folder_path}")
+        return
+
+    # Name of the output .mapp file
+    folder_name = os.path.basename(folder_path.rstrip("/\\"))
+    output_file = folder_name + ".mapp"
+
+    try:
+        with zipfile.ZipFile(output_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(folder_path):
+                for f in files:
+                    abs_path = os.path.join(root, f)
+                    # Store relative path in the zip
+                    rel_path = os.path.relpath(abs_path, folder_path)
+                    zf.write(abs_path, rel_path)
+
+        print(Fore.GREEN + f"✓ Successfully packaged '{folder_path}' → '{output_file}'")
+    except Exception as e:
+        print(Fore.RED + f"Error packaging .mapp: {e}")
+    """Package a folder-based .mapp into a zip with .mapp extension"""
+    if not os.path.isdir(folder_path):
+        print(Fore.RED + f"Folder not found: {folder_path}")
+        return
+
+    # Determine output .mapp file name
+    folder_name = os.path.basename(folder_path.rstrip("/\\"))
+    output_file = folder_name + ".mapp"
+
+    # Create zip
+    try:
+        with zipfile.ZipFile(output_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(folder_path):
+                for f in files:
+                    abs_path = os.path.join(root, f)
+                    rel_path = os.path.relpath(abs_path, folder_path)
+                    zf.write(abs_path, rel_path)
+        print(Fore.GREEN + f"✓ Packaged '{folder_path}' → '{output_file}'")
+    except Exception as e:
+        print(Fore.RED + f"Error packaging .mapp: {e}")
+
 
 def run_file(filename):
     """Run a file with its default application"""
@@ -1061,7 +1259,7 @@ def mirage_store_list(page_size=5):
     """List all apps in the Mirage Store with pagination"""
     try:
         import requests, json
-        print(Fore.CYAN + "📦 Fetching apps from Mirage Store...")
+        print(Fore.CYAN + "Fetching apps from Mirage Store...")
         response = requests.get(f"{STORE_API}/apps", timeout=10)
         
         if response.status_code != 200:
@@ -1107,11 +1305,11 @@ def mirage_store_list(page_size=5):
                             author = metadata.get('author', 'Unknown')
                             desc = metadata.get('description', '')
                             
-                            print(Fore.YELLOW + f"  📦 Name: {name}")
-                            print(Fore.WHITE + f"   🔖 Version: {version}")
-                            print(Fore.WHITE + f"   👤 Author: {author}")
+                            print(Fore.YELLOW + f"  Name: {name}")
+                            print(Fore.WHITE + f"   Version: {version}")
+                            print(Fore.WHITE + f"   Author: {author}")
                             if desc:
-                                print(Fore.WHITE + f"   📄 Description: {desc}")
+                                print(Fore.WHITE + f"     Description: {desc}")
                 except Exception:
                     pass
                 print()
@@ -1146,7 +1344,7 @@ def mirage_store_download(filename):
         if not filename.endswith('.mapp'):
             filename += '.mapp'
         
-        print(Fore.CYAN + f"📥 Downloading '{filename}' from Mirage Store...")
+        print(Fore.CYAN + f"Downloading '{filename}' from Mirage Store...")
         
         response = requests.get(f"{STORE_API}/apps/{filename}", timeout=30)
         
@@ -1204,7 +1402,7 @@ def mirage_store_upload(filename, current_user):
             metadata['author'] = current_user
             print(Fore.YELLOW + f"Setting author to: {current_user}")
         
-        print(Fore.CYAN + f"📤 Uploading '{filename}' to Mirage Store...")
+        print(Fore.CYAN + f"  Uploading '{filename}' to Mirage Store...")
         print(Fore.YELLOW + f"   App: {metadata.get('name', 'Unknown')}")
         print(Fore.YELLOW + f"   Version: {metadata.get('version', '?')}")
         print(Fore.YELLOW + f"   Author: {metadata.get('author', 'Unknown')}")
@@ -1432,11 +1630,15 @@ def mirage():
                 elif parts[1] == "new":
                     if len(parts) > 2:
                         filename = parts[2]
-                        if not filename.endswith('.mapp'):
-                            filename += '.mapp'
                         create_mapp_template(filename)
                     else:
                         print(Fore.RED + "Usage: mapp new FILENAME")
+                elif parts[1].lower() == "package":
+                    if len(parts) < 3:
+                        print(Fore.RED + "Usage: mapp package <dir>")
+                    else:
+                        folder_path = parts[2]
+                        package_mapp_command(parts)  # calls the function we wrote earlier
                 else:
                     print(Fore.RED + "Unknown mapp command. Use: list, new")
             else:
@@ -1482,8 +1684,7 @@ def mirage():
             current_user = switch_user()
             aliases = load_aliases()
             current_user = switch_user()
-            aliases = load_aliases()
-                    
+            aliases = load_aliases()                
         elif command == "logout":
             print(Fore.CYAN + f"Logging out '{current_user}'...")
             # Clean up guest directory if logging out as guest

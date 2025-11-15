@@ -27,12 +27,14 @@ Installing MirageOS is quite simple. just follow these steps!
   === .mapp Applications ===
   mapp list        - List all .mapp files
   mapp new FILE    - Create new .mapp template
+  mapp package DIR - Packages a .mapp folder to a .mapp file
   run FILE.mapp    - Run a .mapp application
 
   === Mirage Store ===
   ms list          - List apps in the store
   ms download FILE - Download app from store
   ms upload FILE   - Upload app to store
+  ms ping          - Ping the MirageStore Server
 
   === File Operations ===
   cat FILE         - Show file contents
