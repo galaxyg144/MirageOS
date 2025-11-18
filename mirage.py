@@ -56,12 +56,53 @@ except ImportError:
 init(autoreset=True)
 
 # ---------- User Management ----------
-USERS_DIR = os.path.expanduser("~/MirageUsers")
+USERS_DIR = os.path.expanduser("~/.MirageUsers")
 USERS_FILE = os.path.join(USERS_DIR, "users.json")
-HISTORY_FILE = "mirage_history.txt"
-ALIASES_FILE = "mirage_aliases.json"
+HISTORY_FILE = os.path.join(USERS_DIR, "mirage_history.txt")
+ALIASES_FILE = os.path.join(USERS_DIR, "mirage_aliases.json")
 MAX_HISTORY = 100
 GUEST_USER = "guest"
+
+# Ensure history and aliases also live inside the hidden folder
+# If you want them in the app dir, tell me and I’ll adjust.
+
+
+def ensure_hidden(path):
+    """Make a file or directory hidden on Windows and Linux."""
+    # Linux: hidden by name (already handled)
+    # Windows: set hidden attribute
+    if platform.system() == "Windows":
+        if os.path.exists(path):
+            try:
+                subprocess.run(["attrib", "+h", path], shell=True)
+            except Exception as e:
+                print("Failed to set hidden attribute:", e)
+
+
+def ensure_mirage_files():
+    # Create main directory
+    if not os.path.exists(USERS_DIR):
+        os.makedirs(USERS_DIR, exist_ok=True)
+
+    # Create files if missing
+    for file_path in [USERS_FILE, HISTORY_FILE, ALIASES_FILE]:
+        if not os.path.exists(file_path):
+            # Create empty JSON or text automatically
+            if file_path.endswith(".json"):
+                with open(file_path, "w") as f:
+                    json.dump({}, f)
+            else:
+                open(file_path, "w").close()
+
+    # Ensure hidden on all OSes
+    ensure_hidden(USERS_DIR)
+    ensure_hidden(USERS_FILE)
+    ensure_hidden(HISTORY_FILE)
+    ensure_hidden(ALIASES_FILE)
+
+
+# Call at startup:
+ensure_mirage_files()
 
 def ensure_users_dir():
     if not os.path.exists(USERS_DIR):
@@ -90,63 +131,67 @@ def create_user(username, password):
 
 def authenticate(username, password):
     users = load_users()
-    return users.get(username) == password
+    stored_password = users.get(username)
+    return stored_password == password
+
 
 def login():
     ensure_users_dir()
     users = load_users()
     print(Fore.CYAN + "Existing users: " + (", ".join([u for u in users.keys() if u != GUEST_USER]) if users else "No users yet."))
     print(Fore.YELLOW + "Tip: Type 'guest' or press Enter twice to use Guest mode")
-    
+
     empty_count = 0
-    while True:
-        username = input(Fore.MAGENTA + "Username: ").strip()
-        
-        # Handle empty input (guest mode trigger)
-        if not username:
-            empty_count += 1
-            if empty_count >= 2:
+    
+    try:
+        while True:
+            username = input(Fore.MAGENTA + "Username: ").strip()
+
+            # Handle empty input (guest mode trigger)
+            if not username:
+                empty_count += 1
+                if empty_count >= 2:
+                    print(Fore.CYAN + "\n Entering Guest Mode...")
+                    time.sleep(0.5)
+                    guest_dir = os.path.join(USERS_DIR, GUEST_USER)
+                    os.makedirs(guest_dir, exist_ok=True)
+                    os.chdir(guest_dir)
+                    print(Fore.RED + " Guest mode: Changes will persist until you logout")
+                    print(Fore.GREEN + f"Logged in as '{GUEST_USER}'\n")
+                    return GUEST_USER
+                continue
+
+            empty_count = 0
+
+            # Username == guest
+            if username.lower() == "guest":
                 print(Fore.CYAN + "\n🌟 Entering Guest Mode...")
                 time.sleep(0.5)
-                # Create guest user directory if doesn't exist
                 guest_dir = os.path.join(USERS_DIR, GUEST_USER)
-                if not os.path.exists(guest_dir):
-                    os.makedirs(guest_dir)
+                os.makedirs(guest_dir, exist_ok=True)
                 os.chdir(guest_dir)
                 print(Fore.YELLOW + "⚠️  Guest mode: Changes will persist until you logout")
                 print(Fore.GREEN + f"Logged in as '{GUEST_USER}'\n")
                 return GUEST_USER
-            continue
-        
-        # Reset empty count if user types something
-        empty_count = 0
-        
-        # Handle guest mode by username
-        if username.lower() == "guest":
-            print(Fore.CYAN + "\n🌟 Entering Guest Mode...")
-            time.sleep(0.5)
-            guest_dir = os.path.join(USERS_DIR, GUEST_USER)
-            if not os.path.exists(guest_dir):
-                os.makedirs(guest_dir)
-            os.chdir(guest_dir)
-            print(Fore.YELLOW + "⚠️  Guest mode: Changes will persist until you logout")
-            print(Fore.GREEN + f"Logged in as '{GUEST_USER}'\n")
-            return GUEST_USER
-        
-        # Normal user login
-        if username in users:
-            password = getpass.getpass("Password: ")
-            if authenticate(username, password):
-                print(Fore.GREEN + f"Logged in as '{username}'\n")
+
+            # Normal user login
+            if username in users:
+                password = getpass.getpass("Password: ")
+                if authenticate(username, password):
+                    print(Fore.GREEN + f"Logged in as '{username}'\n")
+                    os.chdir(os.path.join(USERS_DIR, username))
+                    return username
+                else:
+                    print(Fore.RED + "Incorrect password!")
+            else:
+                password = getpass.getpass("New password: ")
+                create_user(username, password)
                 os.chdir(os.path.join(USERS_DIR, username))
                 return username
-            else:
-                print(Fore.RED + "Incorrect password!")
-        else:
-            password = getpass.getpass("New password: ")
-            create_user(username, password)
-            os.chdir(os.path.join(USERS_DIR, username))
-            return username
+    
+    except KeyboardInterrupt:
+        print(Fore.RED + "\nLogin cancelled.\n" + Style.RESET_ALL)
+        return None
 
 def switch_user():
     print(Fore.CYAN + "\nSwitching user...")
@@ -353,11 +398,15 @@ def splash_screen():
         if line.strip():  # Only print non-empty lines
             color = sunset_colors[i % len(sunset_colors)]
             print(color + line.center(width))
-    
     # Sunset-themed welcome message
-    print(Fore.YELLOW + "\n Welcome to Mirage \n".center(width))
-    print(Fore.MAGENTA + "Version 1.2 'Courier'  \n".center(width))
-    print(Fore.CYAN + "Type 'help' for commands\n".center(width))
+    print(Fore.YELLOW + "\n" + "Welcome to Mirage\n".center(width) + Style.RESET_ALL)
+    print(Fore.MAGENTA + "Version 1.3 'Horizons'".center(width) + "\n" + Style.RESET_ALL)
+
+    if sys.platform.startswith("linux"):
+        print(Fore.GREEN + "Linux Edition!".center(width) + "\n" + Style.RESET_ALL)
+
+    print(Fore.CYAN + "Type 'help' for commands".center(width) + "\n" + Style.RESET_ALL)
+
 
 # ---------- New Utility Functions ----------
 def echo_command(args):
@@ -371,9 +420,9 @@ def count_files(path="."):
         files = [i for i in items if os.path.isfile(os.path.join(path, i))]
         dirs = [i for i in items if os.path.isdir(os.path.join(path, i))]
         
-        print(Fore.CYAN + f"📁 Directories: {len(dirs)}")
-        print(Fore.CYAN + f"📄 Files: {len(files)}")
-        print(Fore.CYAN + f"📊 Total: {len(items)}")
+        print(Fore.CYAN + f" Directories: {len(dirs)}")
+        print(Fore.CYAN + f" Files: {len(files)}")
+        print(Fore.CYAN + f" Total: {len(items)}")
     except Exception as e:
         print(Fore.RED + f"Error: {e}")
 
@@ -392,7 +441,7 @@ def disk_usage(path="."):
         # Convert to human readable
         for unit in ['B', 'KB', 'MB', 'GB']:
             if total_size < 1024.0:
-                print(Fore.CYAN + f"💾 Disk usage: {total_size:.2f} {unit}")
+                print(Fore.CYAN + f" Disk usage: {total_size:.2f} {unit}")
                 break
             total_size /= 1024.0
     except Exception as e:
@@ -485,9 +534,9 @@ def wc_file(filename):
             words = len(content.split())
             chars = len(content)
         
-        print(Fore.CYAN + f"📏 Lines: {lines}")
-        print(Fore.CYAN + f"📝 Words: {words}")
-        print(Fore.CYAN + f"🔤 Characters: {chars}")
+        print(Fore.CYAN + f" Lines: {lines}")
+        print(Fore.CYAN + f" Words: {words}")
+        print(Fore.CYAN + f" Characters: {chars}")
     except FileNotFoundError:
         print(Fore.RED + "File not found.")
     except Exception as e:
@@ -509,7 +558,7 @@ def show_fortune():
         import fortune as fortune_lib
         try:
             fortune_text = fortune_lib.get_random_fortune()
-            print(Fore.MAGENTA + "\n💭 Fortune Cookie:\n")
+            print(Fore.MAGENTA + "\n Fortune Cookie:\n")
             print(Fore.WHITE + fortune_text + "\n")
             return
         except Exception:
@@ -535,7 +584,7 @@ def show_fortune():
 
     # Pick one random fortune
     import random
-    print(Fore.MAGENTA + "\n💭 Fortune Cookie:\n")
+    print(Fore.MAGENTA + "\n Fortune Cookie:\n")
     print(Fore.WHITE + random.choice(fortunes) + "\n")
     """Display a random fortune/quote"""
     try:
@@ -711,6 +760,57 @@ def list_apps():
     print(Fore.YELLOW + "  todo   " + Fore.WHITE + "- Todo Manager")
 
 def run_editor(filename):
+    """
+    Launch a text editor for the given file.
+    Uses mirage_editor.py on Windows, nano on Linux.
+    """
+    if sys.platform.startswith("win"):
+        editor_path = os.path.join(os.path.dirname(__file__), "mirage_editor.py")
+        if not os.path.exists(editor_path):
+            print(Fore.RED + "mirage_editor.py not found!")
+            return
+        subprocess.run([sys.executable, editor_path, filename])
+    else:
+        # Use nano on Linux
+        if not os.path.exists(filename):
+            # Create the file if it doesn't exist
+            open(filename, "a").close()
+        subprocess.run(["nano", filename])
+
+def show_tree(path=".", prefix=""):
+    """Display directory tree structure"""
+    try:
+        items = sorted(os.listdir(path))
+        items = [i for i in items if not i.startswith('.')]
+        
+        for i, item in enumerate(items):
+            is_last_item = (i == len(items) - 1)
+            item_path = os.path.join(path, item)
+            
+            connector = "└── " if is_last_item else "├── "
+            if os.path.isdir(item_path):
+                print(Fore.BLUE + prefix + connector + item + "/")
+                extension = "    " if is_last_item else "│   "
+                show_tree(item_path, prefix + extension)
+            else:
+                print(Fore.WHITE + prefix + connector + item)
+    except PermissionError:
+        print(Fore.RED + prefix + "[Permission Denied]")
+
+def show_file_info(filename):
+    """Show detailed file information"""
+    if not os.path.exists(filename):
+        print(Fore.RED + "File not found.")
+        return
+    
+    stat = os.stat(filename)
+    print(Fore.CYAN + "═" * 40)
+    print(Fore.YELLOW + "File: " + Fore.WHITE + filename)
+    print(Fore.YELLOW + "Size: " + Fore.WHITE + f"{stat.st_size} bytes")
+    print(Fore.YELLOW + "Type: " + Fore.WHITE + ("Directory" if os.path.isdir(filename) else "File"))
+    print(Fore.YELLOW + "Modified: " + Fore.WHITE + datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'))
+    print(Fore.YELLOW + "Created: " + Fore.WHITE + datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S'))
+    print(Fore.CYAN + "═" * 40)
     editor_path = os.path.join(os.path.dirname(__file__), "mirage_editor.py")
     if not os.path.exists(editor_path):
         print(Fore.RED + "mirage_editor.py not found!")
@@ -889,96 +989,79 @@ def parse_mapp_file(filename):
 
 def run_mapp(path):
     """
-    Run a Mirage Application.
+    Run a Mirage Application (.mapp).
     Supports:
     - Folder-based .mapp (manifest.toml + Python files)
     - Old-style .mapp (single file with [JSON]/[PY] sections)
     - Packaged zip-based .mapp
+    Only runs after user confirms.
     """
-    if os.path.isdir(path):
-        # Folder-based
-        manifest_path = os.path.join(path, "manifest.toml")
-        if not os.path.exists(manifest_path):
-            print(Fore.RED + "manifest.toml not found in folder-based .mapp")
-            return
+    temp_path = None
+    manifest = None
+    interactive = True
+    meta = {}
 
-        try:
-            import tomllib  # Python 3.11+
-        except ModuleNotFoundError:
-            import tomllib
-
-        with open(manifest_path, "rb") as f:
-            manifest = tomllib.load(f)
-
-        entry = manifest["app"].get("entry_point", "main.py")
-        app_path = os.path.join(path, entry)
-        if not os.path.exists(app_path):
-            print(Fore.RED + f"Entry point '{entry}' not found in folder-based .mapp")
-            return
-
-        interactive = manifest["app"].get("interactive", True)
-        meta = manifest.get("meta", {})
-
-        print(Fore.CYAN + f"Running {meta.get('name', 'Unknown')} v{meta.get('version', 'Unknown')}...")
-        try:
-            if interactive:
-                subprocess.run(["python", app_path])
-            else:
-                result = subprocess.run(["python", app_path], capture_output=True, text=True)
-                print(result.stdout)
-                if result.stderr:
-                    print(Fore.RED + result.stderr)
-        except Exception as e:
-            print(Fore.RED + f"Application error: {e}")
-
-    elif zipfile.is_zipfile(path):
-        # Packaged zip-based .mapp
-        with zipfile.ZipFile(path, "r") as zf:
-            if "manifest.toml" not in zf.namelist():
-                print(Fore.RED + "manifest.toml not found in packaged .mapp")
+    try:
+        if os.path.isdir(path):
+            # Folder-based
+            manifest_path = os.path.join(path, "manifest.toml")
+            if not os.path.exists(manifest_path):
+                print(Fore.RED + "manifest.toml not found in folder-based .mapp")
                 return
 
             try:
-                import tomllib
+                import tomllib  # Python 3.11+
             except ModuleNotFoundError:
                 import tomllib
 
-            with zf.open("manifest.toml") as f:
+            with open(manifest_path, "rb") as f:
                 manifest = tomllib.load(f)
 
             entry = manifest["app"].get("entry_point", "main.py")
-            if entry not in zf.namelist():
-                print(Fore.RED + f"Entry point '{entry}' not found in packaged .mapp")
+            temp_path = os.path.join(path, entry)
+            if not os.path.exists(temp_path):
+                print(Fore.RED + f"Entry point '{entry}' not found in folder-based .mapp")
                 return
-
-            # Extract entry to temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
-                temp_file.write(zf.read(entry))
-                temp_path = temp_file.name
 
             interactive = manifest["app"].get("interactive", True)
             meta = manifest.get("meta", {})
 
-            print(Fore.CYAN + f"Running {meta.get('name', 'Unknown')} v{meta.get('version', 'Unknown')}...")
-            print(Fore.RED + f"Warning: This is an old version .mapp file (1.1-)")
-            try:
-                if interactive:
-                    subprocess.run(["python", temp_path])
-                else:
-                    result = subprocess.run(["python", temp_path], capture_output=True, text=True)
-                    print(result.stdout)
-                    if result.stderr:
-                        print(Fore.RED + result.stderr)
-            finally:
-                os.remove(temp_path)
+        elif zipfile.is_zipfile(path):
+            # Zip-based
+            with zipfile.ZipFile(path, "r") as zf:
+                if "manifest.toml" not in zf.namelist():
+                    print(Fore.RED + "manifest.toml not found in packaged .mapp")
+                    return
 
-    else:
-        # Old-style single-file .mapp
-        try:
+                try:
+                    import tomllib
+                except ModuleNotFoundError:
+                    import tomllib
+
+                with zf.open("manifest.toml") as f:
+                    manifest = tomllib.load(f)
+
+                entry = manifest["app"].get("entry_point", "main.py")
+                if entry not in zf.namelist():
+                    print(Fore.RED + f"Entry point '{entry}' not found in packaged .mapp")
+                    return
+
+                # Extract entry to temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
+                    temp_file.write(zf.read(entry))
+                    temp_path = temp_file.name
+
+                interactive = manifest["app"].get("interactive", True)
+                meta = manifest.get("meta", {})
+
+                # Warning for old .mapp versions
+                print(Fore.RED + f"Warning: This is an old version .mapp file (1.1-)")
+
+        else:
+            # Old-style single-file .mapp
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            # Extract JSON metadata
             json_start = content.find("[JSON]")
             json_end = content.find("[JSONEND]")
             py_start = content.find("[PY]")
@@ -992,62 +1075,44 @@ def run_mapp(path):
             metadata = json.loads(json_str)
             code = content[py_start + 4 : py_end].strip()
 
-            print(Fore.CYAN + f"Running {metadata.get('name', 'Unknown')} v{metadata.get('version', 'Unknown')}...")
             with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
                 temp_file.write(code.encode("utf-8"))
                 temp_path = temp_file.name
 
             interactive = metadata.get("interactive", True)
-            if interactive:
-                subprocess.run(["python", temp_path])
-            else:
-                result = subprocess.run(["python", temp_path], capture_output=True, text=True)
-                print(result.stdout)
-                if result.stderr:
-                    print(Fore.RED + result.stderr)
+            meta = metadata
 
-        except Exception as e:
-            print(Fore.RED + f"Error running old-style .mapp: {e}")
-        finally:
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
-
-    """Run a .mapp file"""
-    print(Fore.CYAN + f"Loading Mirage Application: {path}")
-    manifest, temp_path, entry_point = parse_mapp_file(path)
-    if not manifest or not temp_path:
+    except Exception as e:
+        print(Fore.RED + f"Error preparing .mapp: {e}")
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
         return
 
-    meta = manifest["meta"]
-    app_info = [
-        f"📦 App: {meta.get('name', 'Unknown')}",
-        f"🔖 Version: {meta.get('version', 'Unknown')}"
-    ]
+    # Show app info
+    print(Fore.CYAN + "═" * 50)
+    print(Fore.YELLOW + f" App: {meta.get('name', 'Unknown')}")
+    print(Fore.YELLOW + f" Version: {meta.get('version', 'Unknown')}")
     if 'author' in meta:
-        app_info.append(f"👤 Author: {meta['author']}")
+        print(Fore.YELLOW + f" Author: {meta['author']}")
     if 'description' in meta:
-        app_info.append(f"📝 Description: {meta['description']}")
-
-    print(Fore.CYAN + "═" * 50)
-    for info in app_info:
-        print(Fore.YELLOW + info)
+        print(Fore.YELLOW + f" Description: {meta['description']}")
     print(Fore.CYAN + "═" * 50)
 
+    # Ask confirmation
     run_confirm = input(Fore.YELLOW + "Run this application? (yes/no): ").strip().lower()
-    if run_confirm != 'yes':
+    if run_confirm not in ['yes', 'y']:
         print(Fore.YELLOW + "Execution cancelled.")
-        os.remove(temp_path)
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
         return
 
+    # Run the application once
     print(Fore.GREEN + "\n▶ Running application...\n")
     try:
-        interactive = manifest["app"].get("interactive", True)
         if interactive:
-            subprocess.run(["python", temp_path])
+            subprocess.run([sys.executable, temp_path])
         else:
-            result = subprocess.run(["python", temp_path], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, temp_path], capture_output=True, text=True)
             print(result.stdout)
             if result.stderr:
                 print(Fore.RED + result.stderr)
@@ -1055,10 +1120,8 @@ def run_mapp(path):
     except Exception as e:
         print(Fore.RED + f"\n✗ Application error: {e}")
     finally:
-        os.remove(temp_path)
-
-import os
-from colorama import Fore
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 def create_mapp_template(foldername):
     """Create a folder-based .mapp template"""
@@ -1118,7 +1181,7 @@ def greet_user(name):
         f.write(utils_py)
 
     print(Fore.GREEN + f"✓ Created template Mirage App folder: {foldername}")
-    print(Fore.CYAN + f"Edit the files inside {foldername} and run them with your loader.")
+    print(Fore.CYAN + f"Edit the files inside {foldername} and once youre ready to distrubute run mapp package {foldername}.")
 
 
 def list_mapps(directory):
@@ -1147,7 +1210,7 @@ def list_mapps(directory):
         if metadata:
             name = metadata.get('name', 'Unknown')
             version = metadata.get('version', '?')
-            print(Fore.BLUE + f"📦 {mapp_file}")
+            print(Fore.BLUE + f"  {mapp_file}")
             print(Fore.YELLOW + f"   {name} " + Fore.WHITE + f"v{version}")
             if 'description' in metadata:
                 print(Fore.WHITE + f"   {metadata['description']}")
@@ -1287,7 +1350,7 @@ def mirage_store_list(page_size=5):
             
             for app_file in current_apps:
                 base_name = app_file.replace('.mapp', '')
-                print(Fore.BLUE + f"📦 {app_file}")
+                print(Fore.BLUE + f" {app_file}")
                 
                 try:
                     meta_response = requests.get(f"{STORE_API}/apps/{app_file}", timeout=30)
@@ -1446,6 +1509,9 @@ def mirage_store_upload(filename, current_user):
 def mirage():
     splash_screen()
     current_user = login()
+    if current_user is None:
+        return  # or show menu again, or exit cleanly
+
     aliases = load_aliases()
 
     while True:
@@ -1633,7 +1699,7 @@ def mirage():
                         create_mapp_template(filename)
                     else:
                         print(Fore.RED + "Usage: mapp new FILENAME")
-                elif parts[1].lower() == "package":
+                elif parts[1].lower() == "package" or parts[1].lower() == "pkg":
                     if len(parts) < 3:
                         print(Fore.RED + "Usage: mapp package <dir>")
                     else:
